@@ -48,7 +48,7 @@ module wt_dcache #(
 );
 
   // LD unit and PTW
-  localparam NumPorts = 3;
+  localparam NumPorts = 4;   //adding port for BHT checkpointing
 
   // miss unit <-> read controllers
   logic cache_en;
@@ -220,27 +220,27 @@ module wt_dcache #(
     .cache_en_i      ( cache_en            ),
     // .cache_en_i      ( '0                  ),
     // request ports from core (store unit)
-    .req_port_i      ( req_ports_i   [2]   ),
-    .req_port_o      ( req_ports_o   [2]   ),
+    .req_port_i      ( req_ports_i   [3]   ),
+    .req_port_o      ( req_ports_o   [3]   ),
     // miss unit interface
-    .miss_req_o      ( miss_req      [2]   ),
-    .miss_ack_i      ( miss_ack      [2]   ),
-    .miss_we_o       ( miss_we       [2]   ),
-    .miss_wdata_o    ( miss_wdata    [2]   ),
-    .miss_vld_bits_o ( miss_vld_bits [2]   ),
-    .miss_paddr_o    ( miss_paddr    [2]   ),
-    .miss_nc_o       ( miss_nc       [2]   ),
-    .miss_size_o     ( miss_size     [2]   ),
-    .miss_id_o       ( miss_id       [2]   ),
-    .miss_rtrn_vld_i ( miss_rtrn_vld [2]   ),
+    .miss_req_o      ( miss_req      [3]   ),
+    .miss_ack_i      ( miss_ack      [3]   ),
+    .miss_we_o       ( miss_we       [3]   ),
+    .miss_wdata_o    ( miss_wdata    [3]   ),
+    .miss_vld_bits_o ( miss_vld_bits [3]   ),
+    .miss_paddr_o    ( miss_paddr    [3]   ),
+    .miss_nc_o       ( miss_nc       [3]   ),
+    .miss_size_o     ( miss_size     [3]   ),
+    .miss_id_o       ( miss_id       [3]   ),
+    .miss_rtrn_vld_i ( miss_rtrn_vld [3]   ),
     .miss_rtrn_id_i  ( miss_rtrn_id        ),
     // cache read interface
-    .rd_tag_o        ( rd_tag        [2]   ),
-    .rd_idx_o        ( rd_idx        [2]   ),
-    .rd_off_o        ( rd_off        [2]   ),
-    .rd_req_o        ( rd_req        [2]   ),
-    .rd_tag_only_o   ( rd_tag_only   [2]   ),
-    .rd_ack_i        ( rd_ack        [2]   ),
+    .rd_tag_o        ( rd_tag        [3]   ),
+    .rd_idx_o        ( rd_idx        [3]   ),
+    .rd_off_o        ( rd_off        [3]   ),
+    .rd_req_o        ( rd_req        [3]   ),
+    .rd_tag_only_o   ( rd_tag_only   [3]   ),
+    .rd_ack_i        ( rd_ack        [3]   ),
     .rd_data_i       ( rd_data             ),
     .rd_vld_bits_i   ( rd_vld_bits         ),
     .rd_hit_oh_i     ( rd_hit_oh           ),

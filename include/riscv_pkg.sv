@@ -402,6 +402,8 @@ package riscv;
         CSR_TDATA2         = 12'h7A2,
         CSR_TDATA3         = 12'h7A3,
         CSR_TINFO          = 12'h7A4,
+        CSR_TBRANCH        = 12'h808, //User Mode Trigger for Branch Predictor Checkpointing
+        CSR_TBPADDR        = 12'h809, //Address for Checkpointing Location
         // Debug CSR
         CSR_DCSR           = 12'h7b0,
         CSR_DPC            = 12'h7b1,

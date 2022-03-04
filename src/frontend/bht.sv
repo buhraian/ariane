@@ -21,10 +21,15 @@ module bht #(
     input  logic                        rst_ni,
     input  logic                        flush_i,
     input  logic                        debug_mode_i,
+    input  logic                        enable_i,
     input  logic [riscv::VLEN-1:0]      vpc_i,
     input  ariane_pkg::bht_update_t     bht_update_i,
+    input  logic [63:0]                 checkpoint_addr_i,
     // we potentially need INSTR_PER_FETCH predictions/cycle
-    output ariane_pkg::bht_prediction_t [ariane_pkg::INSTR_PER_FETCH-1:0] bht_prediction_o
+    output ariane_pkg::bht_prediction_t [ariane_pkg::INSTR_PER_FETCH-1:0] bht_prediction_o,
+    output dcache_req_i_t               bht_checkpoint_o, //output to Dcache
+    output logic                        lsu_checkpoint_o, //output to Dcache to signal it to start reading from BHT, this signal may not be necessary
+    output logic                        reset_checkpoint_o //output to CSR to reset 0x808 to 0 after all data has been checkpointed
 );
     // the last bit is always zero, we don't need it for indexing
     localparam OFFSET = 1;
@@ -52,32 +57,50 @@ module bht #(
 
     // prediction assignment
     for (genvar i = 0; i < ariane_pkg::INSTR_PER_FETCH; i++) begin : gen_bht_output
-        assign bht_prediction_o[i].valid = bht_q[index][i].valid;
-        assign bht_prediction_o[i].taken = bht_q[index][i].saturation_counter[1] == 1'b1;
+        assign bht_prediction_o[i].valid = (enable_i) ? bht_q[index][i].valid : 1'b0;
+        assign bht_prediction_o[i].taken = (enable_i) ? bht_q[index][i].saturation_counter[1] == 1'b1 : 1'b0;
     end
 
+    //assignments for checkpointing
+    assign bht_checkpoint_o.address_index = 
+    assign bht_checkpoint_o.address_tag   =
+    assign bht_checkpoint_o.data_wdata    =   
+    assign bht_checkpoint_o.data_req      = 
+    assign bht_checkpoint_o.data_we       =
+    assign bht_checkpoint_o.data_be       =
+    assign bht_checkpoint_o.data_size     =  
+    assign bht_checkpoint_o.kill_req      = 
+    assign bht_checkpoint_o.tag_valid     =  
+
     always_comb begin : update_bht
-        bht_d = bht_q;
-        saturation_counter = bht_q[update_pc][update_row_index].saturation_counter;
+        if(enable_i) begin
+            bht_d = bht_q;
+            saturation_counter = bht_q[update_pc][update_row_index].saturation_counter;
 
-        if (bht_update_i.valid && !debug_mode_i) begin
-            bht_d[update_pc][update_row_index].valid = 1'b1;
+            if (bht_update_i.valid && !debug_mode_i) begin
+                bht_d[update_pc][update_row_index].valid = 1'b1;
 
-            if (saturation_counter == 2'b11) begin
-                // we can safely decrease it
-                if (!bht_update_i.taken)
-                    bht_d[update_pc][update_row_index].saturation_counter = saturation_counter - 1;
-            // then check if it saturated in the negative regime e.g.: branch not taken
-            end else if (saturation_counter == 2'b00) begin
-                // we can safely increase it
-                if (bht_update_i.taken)
-                    bht_d[update_pc][update_row_index].saturation_counter = saturation_counter + 1;
-            end else begin // otherwise we are not in any boundaries and can decrease or increase it
-                if (bht_update_i.taken)
-                    bht_d[update_pc][update_row_index].saturation_counter = saturation_counter + 1;
-                else
-                    bht_d[update_pc][update_row_index].saturation_counter = saturation_counter - 1;
+                if (saturation_counter == 2'b11) begin
+                    // we can safely decrease it
+                    if (!bht_update_i.taken)
+                        bht_d[update_pc][update_row_index].saturation_counter = saturation_counter - 1;
+                // then check if it saturated in the negative regime e.g.: branch not taken
+                end else if (saturation_counter == 2'b00) begin
+                    // we can safely increase it
+                    if (bht_update_i.taken)
+                        bht_d[update_pc][update_row_index].saturation_counter = saturation_counter + 1;
+                end else begin // otherwise we are not in any boundaries and can decrease or increase it
+                    if (bht_update_i.taken)
+                        bht_d[update_pc][update_row_index].saturation_counter = saturation_counter + 1;
+                    else
+                        bht_d[update_pc][update_row_index].saturation_counter = saturation_counter - 1;
+                end
             end
+        end else begin //not enabled
+            csr_reset_d = csr_reset_q;
+            //write code that pushes stuff out into LSU
+            //use the counter to 
+            if ()
         end
     end
 
@@ -88,7 +111,7 @@ module bht #(
                     bht_q[i][j] <= '0;
                 end
             end
-        end else begin
+        end else if(enable_i) begin
             // evict all entries
             if (flush_i) begin
                 for (int i = 0; i < NR_ROWS; i++) begin
@@ -100,6 +123,8 @@ module bht #(
             end else begin
                 bht_q <= bht_d;
             end
+        end else begin
+            
         end
     end
 endmodule

@@ -82,7 +82,10 @@ module csr_regfile #(
     output logic  [4:0]           perf_addr_o,                // read/write address to performance counter module (up to 29 aux counters possible in riscv encoding.h)
     output logic  [63:0]          perf_data_o,                // write data to performance counter module
     input  logic  [63:0]          perf_data_i,                // read data from performance counter module
-    output logic                  perf_we_o
+    output logic                  perf_we_o,
+    // Branch Predictor Snooping
+    output logic  [63:0]          bp_snoop_o,                 // snooping specific CSR reg to trigger predictor state checkpointing
+    output logic  [63:0]          bp_addr_o   
 );
     // internal signal to keep track of access exceptions
     logic        read_access_exception, update_access_exception, privilege_violation;
@@ -134,6 +137,9 @@ module csr_regfile #(
 
     logic [63:0] cycle_q,     cycle_d;
     logic [63:0] instret_q,   instret_d;
+
+    logic [63:0] bp_snoop_q,  bp_snoop_d;
+    logic [63:0] bp_addr_q,   bp_addr_d;
 
     riscv::fcsr_t fcsr_q, fcsr_d;
     // ----------------
@@ -191,6 +197,8 @@ module csr_regfile #(
                 riscv::CSR_TDATA1:;  // not implemented
                 riscv::CSR_TDATA2:;  // not implemented
                 riscv::CSR_TDATA3:;  // not implemented
+                riscv::CSR_TBRANCH:            csr_rdata = bp_snoop_q;
+                riscv::CSR_TBPADDR:            csr_rdata = bp_addr_q;
                 // supervisor registers
                 riscv::CSR_SSTATUS: begin
                     csr_rdata = mstatus_q & ariane_pkg::SMODE_STATUS_READ_MASK;
@@ -348,6 +356,9 @@ module csr_regfile #(
         stval_d                 = stval_q;
         satp_d                  = satp_q;
 
+        bp_snoop_d              = bp_snoop_q;
+        bp_addr_d               = bp_addr_q;
+
         en_ld_st_translation_d  = en_ld_st_translation_q;
         dirty_fp_state_csr      = 1'b0;
 
@@ -415,6 +426,8 @@ module csr_regfile #(
                 riscv::CSR_TDATA1:;  // not implemented
                 riscv::CSR_TDATA2:;  // not implemented
                 riscv::CSR_TDATA3:;  // not implemented
+                riscv::CSR_TBRANCH:            bp_snoop_d = csr_wdata;
+                riscv::CSR_TBPADDR:            bp_addr_d  = csr_wdata;
                 // sstatus is a subset of mstatus - mask it accordingly
                 riscv::CSR_SSTATUS: begin
                     mask = ariane_pkg::SMODE_STATUS_WRITE_MASK;
@@ -982,6 +995,9 @@ module csr_regfile #(
     assign debug_mode_o     = debug_mode_q;
     assign single_step_o    = dcsr_q.step;
 
+    // branch predictor checkpointing output
+    assign bp_snoop_o       = bp_snoop_q;
+    assign bp_addr_o        = bp_addr_q;
     // sequential process
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (~rst_ni) begin
@@ -1036,6 +1052,9 @@ module csr_regfile #(
             dpc_q                  <= dpc_d;
             dscratch0_q            <= dscratch0_d;
             dscratch1_q            <= dscratch1_d;
+            // user mode trigger
+            bp_snoop_q             <= bp_snoop_d;
+            bp_addr_q              <= bp_addr_d;
             // machine mode registers
             mstatus_q              <= mstatus_d;
             mtvec_rst_load_q       <= 1'b0;

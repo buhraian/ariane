@@ -44,7 +44,9 @@ module frontend #(
   // instruction output port -> to processor back-end
   output fetch_entry_t       fetch_entry_o,       // fetch entry containing all relevant data for the ID stage
   output logic               fetch_entry_valid_o, // instruction in IF is valid
-  input  logic               fetch_entry_ready_i  // ID acknowledged this instruction
+  input  logic               fetch_entry_ready_i, // ID acknowledged this instruction
+  input  logic  [63:0]       bp_snoop_i,          // branch predictor checkpointing snoop input
+  input  logic  [63:0]       bp_addr_i
 );
     // Instruction Cache Registers, from I$
     logic [FETCH_WIDTH-1:0] icache_data_q;
@@ -250,10 +252,12 @@ module frontend #(
     bht_update_t bht_update;
     btb_update_t btb_update;
 
+    logic enable_bht;
     assign bht_update.valid = resolved_branch_i.valid
                                 & (resolved_branch_i.cf_type == ariane_pkg::Branch);
     assign bht_update.pc    = resolved_branch_i.pc;
     assign bht_update.taken = resolved_branch_i.is_taken;
+    assign enable_bht       = (bp_snoop_i == 64'b1) ? 1'b0 : 1'b1; // enables bht only when snoop is low
     // only update mispredicted branches e.g. no returns from the RAS
     assign btb_update.valid = resolved_branch_i.valid
                                 & resolved_branch_i.is_mispredict
@@ -378,9 +382,12 @@ module frontend #(
       .rst_ni,
       .flush_i          ( flush_bp_i       ),
       .debug_mode_i,
+      .enable_i         ( enable_bht       ),
       .vpc_i            ( icache_vaddr_q   ),
       .bht_update_i     ( bht_update       ),
-      .bht_prediction_o ( bht_prediction   )
+      .checkpoint_addr_i( bp_addr_i        ),
+      .bht_prediction_o ( bht_prediction   ),
+      
     );
 
     // we need to inspect up to INSTR_PER_FETCH instructions for branches

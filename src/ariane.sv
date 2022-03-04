@@ -172,6 +172,8 @@ module ariane #(
   logic                     icache_en_csr;
   logic                     debug_mode;
   logic                     single_step_csr_commit;
+  logic [63:0]              snoop_csr_if;
+  logic [63:0]              addr_csr_if;
   // ----------------------------
   // Performance Counters <-> *
   // ----------------------------
@@ -244,6 +246,8 @@ module ariane #(
     .fetch_entry_o       ( fetch_entry_if_id             ),
     .fetch_entry_valid_o ( fetch_valid_if_id             ),
     .fetch_entry_ready_i ( fetch_ready_id_if             ),
+    .bp_snoop_i          ( snoop_csr_if                  ),
+    .bp_addr_i           ( addr_csr_if                   )
     .*
   );
 
@@ -517,6 +521,8 @@ module ariane #(
     .ipi_i,
     .irq_i,
     .time_irq_i,
+    .bp_snoop_o             ( snoop_csr_if                  ),
+    .bp_addr_o              ( addr_csr_if                   ),
     .*
   );
   // ------------------------
@@ -605,7 +611,7 @@ module ariane #(
     .dcache_amo_resp_o     ( amo_resp                    ),
     // from PTW, Load Unit  and Store Unit
     .dcache_miss_o         ( dcache_miss_cache_perf      ),
-    .dcache_req_ports_i    ( dcache_req_ports_ex_cache   ),
+    .dcache_req_ports_i    ( dcache_req_ports_ex_cache   ),  //{dcache_req_ports_ex_cache[2], ourstuff, dcache_req_ports_ex_cache[1:0]}
     .dcache_req_ports_o    ( dcache_req_ports_cache_ex   ),
     // write buffer status
     .wbuffer_empty_o       ( dcache_commit_wbuffer_empty ),
