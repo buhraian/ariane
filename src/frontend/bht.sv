@@ -47,6 +47,9 @@ module bht #(
         logic [1:0] saturation_counter;
     } bht_d[NR_ROWS-1:0][ariane_pkg::INSTR_PER_FETCH-1:0], bht_q[NR_ROWS-1:0][ariane_pkg::INSTR_PER_FETCH-1:0];
 
+    logic [$clog2(NR_ENTRIES)-1:0] checkpoint_counter;
+    dcache_req_i_t                 checkpoint_output;
+
     logic [$clog2(NR_ROWS)-1:0]  index, update_pc;
     logic [ROW_ADDR_BITS-1:0]    update_row_index;
     logic [1:0]                  saturation_counter;
@@ -62,17 +65,10 @@ module bht #(
     end
 
     //assignments for checkpointing
-    assign bht_checkpoint_o.address_index = 
-    assign bht_checkpoint_o.address_tag   =
-    assign bht_checkpoint_o.data_wdata    =   
-    assign bht_checkpoint_o.data_req      = 
-    assign bht_checkpoint_o.data_we       =
-    assign bht_checkpoint_o.data_be       =
-    assign bht_checkpoint_o.data_size     =  
-    assign bht_checkpoint_o.kill_req      = 
-    assign bht_checkpoint_o.tag_valid     =  
+    assign bht_checkpoint_o = checkpoint_output;
 
     always_comb begin : update_bht
+        csr_reset_d = csr_reset_q;
         if(enable_i) begin
             bht_d = bht_q;
             saturation_counter = bht_q[update_pc][update_row_index].saturation_counter;
@@ -96,11 +92,23 @@ module bht #(
                         bht_d[update_pc][update_row_index].saturation_counter = saturation_counter - 1;
                 end
             end
+            csr_reset_d = 1'b0;
         end else begin //not enabled
-            csr_reset_d = csr_reset_q;
-            //write code that pushes stuff out into LSU
-            //use the counter to 
-            if ()
+            //write code that pushes stuff out into DCACHE
+            if(checkpoint_counter == NR_ENTRIES) begin //when all entries have been written out, reset the CSR to re-enable BHT
+                csr_reset_d = 1'b1;
+            end else begin  //else, continue with the outputting
+                csr_reset_d = 1'b0;
+                //writing to interim register that is then assigned aboved
+                checkpoint_output.address_index = checkpoint_addr_i[riscv::DCACHE_INDEX_WIDTH-1:0];
+                checkpoint_output.address_tag   = checkpoint_addr_i[riscv::PLEN-1:riscv::PLEN-1-DCACHE_TAG_WIDTH];
+                checkpoint_output.data_wdata    = {bht_q[checkpoint_counter[$clog2(NR_ENTRIES)-1:1]][checkpoint_counter[0]].valid, 
+                                                   bht_q[checkpoint_counter[$clog2(NR_ENTRIES)-1:1]][checkpoint_counter[0]].saturation_counter};   //there's only 3 bits of data, per entry, we could theoretically pack 21 entries into one write, would save on time
+                checkpoint_output.data_we       = 1'b1;
+                checkpoint_output.data_be       = 8'b1;
+                checkpoint_output.data_size     = 2'b11; //found that this was the default for data_size assignment
+                checkpoint_counter = checkpoint_counter + 1;
+            end
         end
     end
 
@@ -123,6 +131,7 @@ module bht #(
             end else begin
                 bht_q <= bht_d;
             end
+            checkpoint_counter <= 0;
         end else begin
             
         end

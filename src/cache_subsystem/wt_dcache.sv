@@ -37,8 +37,8 @@ module wt_dcache #(
   output amo_resp_t                      amo_resp_o,
 
   // Request ports
-  input  dcache_req_i_t [2:0]            req_ports_i,
-  output dcache_req_o_t [2:0]            req_ports_o,
+  input  dcache_req_i_t [3:0]            req_ports_i,
+  output dcache_req_o_t [3:0]            req_ports_o,
 
   input  logic                           mem_rtrn_vld_i,
   input  dcache_rtrn_t                   mem_rtrn_i,
