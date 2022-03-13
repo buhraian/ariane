@@ -85,7 +85,8 @@ module csr_regfile #(
     output logic                  perf_we_o,
     // Branch Predictor Snooping
     output logic  [63:0]          bp_snoop_o,                 // snooping specific CSR reg to trigger predictor state checkpointing
-    output logic  [63:0]          bp_addr_o   
+    output logic  [63:0]          bp_addr_o,
+    input  logic                  reset_ckpt_i   
 );
     // internal signal to keep track of access exceptions
     logic        read_access_exception, update_access_exception, privilege_violation;
@@ -362,6 +363,9 @@ module csr_regfile #(
         en_ld_st_translation_d  = en_ld_st_translation_q;
         dirty_fp_state_csr      = 1'b0;
 
+        if (reset_ckpt_i) begin
+            bp_snoop_d = 64'b0;
+        end
         // check for correct access rights and that we are writing
         if (csr_we) begin
             unique case (csr_addr.address)
@@ -426,7 +430,7 @@ module csr_regfile #(
                 riscv::CSR_TDATA1:;  // not implemented
                 riscv::CSR_TDATA2:;  // not implemented
                 riscv::CSR_TDATA3:;  // not implemented
-                riscv::CSR_TBRANCH:            bp_snoop_d = csr_wdata;
+                riscv::CSR_TBRANCH:            begin if(!reset_ckpt_i) begin bp_snoop_d = csr_wdata; end end
                 riscv::CSR_TBPADDR:            bp_addr_d  = csr_wdata;
                 // sstatus is a subset of mstatus - mask it accordingly
                 riscv::CSR_SSTATUS: begin

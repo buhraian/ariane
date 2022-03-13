@@ -46,8 +46,8 @@ module wt_cache_subsystem #(
   input amo_req_t                        dcache_amo_req_i,
   output amo_resp_t                      dcache_amo_resp_o,
   // Request ports
-  input  dcache_req_i_t   [3:0]          dcache_req_ports_i,     // to/from LSU
-  output dcache_req_o_t   [3:0]          dcache_req_ports_o,     // to/from LSU
+  input  dcache_req_i_t   [2:0]          dcache_req_ports_i,     // to/from LSU
+  output dcache_req_o_t   [2:0]          dcache_req_ports_o,     // to/from LSU
   // writebuffer status
   output logic                           wbuffer_empty_o,
 `ifdef PITON_ARIANE
@@ -177,9 +177,9 @@ module wt_cache_subsystem #(
     icache_dreq_o.vaddr, icache_dreq_o.data);
 
   a_invalid_write_data: assert property (
-    @(posedge clk_i) disable iff (!rst_ni) dcache_req_ports_i[3].data_req |-> |dcache_req_ports_i[3].data_be |-> (|dcache_req_ports_i[3].data_wdata) !== 1'hX)
+    @(posedge clk_i) disable iff (!rst_ni) dcache_req_ports_i[2].data_req |-> |dcache_req_ports_i[2].data_be |-> (|dcache_req_ports_i[2].data_wdata) !== 1'hX)
   else $warning(1,"[l1 dcache] writing invalid data: paddr=%016X, be=%02X, data=%016X",
-    {dcache_req_ports_i[3].address_tag, dcache_req_ports_i[3].address_index}, dcache_req_ports_i[3].data_be, dcache_req_ports_i[3].data_wdata);
+    {dcache_req_ports_i[2].address_tag, dcache_req_ports_i[2].address_index}, dcache_req_ports_i[2].data_be, dcache_req_ports_i[2].data_wdata);
 
 
   for (genvar j=0; j<3; j++) begin : gen_assertion

@@ -28,8 +28,8 @@ module bht #(
     // we potentially need INSTR_PER_FETCH predictions/cycle
     output ariane_pkg::bht_prediction_t [ariane_pkg::INSTR_PER_FETCH-1:0] bht_prediction_o,
     output dcache_req_i_t               bht_checkpoint_o, //output to Dcache
-    output logic                        lsu_checkpoint_o, //output to Dcache to signal it to start reading from BHT, this signal may not be necessary
-    output logic                        reset_checkpoint_o //output to CSR to reset 0x808 to 0 after all data has been checkpointed
+    input  dcache_req_o_t               bht_checkpoint_i,
+    output logic                        rst_checkpoint_o //output to CSR to reset 0x808 to 0 after all data has been checkpointed
 );
     // the last bit is always zero, we don't need it for indexing
     localparam OFFSET = 1;
@@ -47,8 +47,9 @@ module bht #(
         logic [1:0] saturation_counter;
     } bht_d[NR_ROWS-1:0][ariane_pkg::INSTR_PER_FETCH-1:0], bht_q[NR_ROWS-1:0][ariane_pkg::INSTR_PER_FETCH-1:0];
 
-    logic [$clog2(NR_ENTRIES)-1:0] checkpoint_counter;
+    logic [$clog2(NR_ENTRIES)-1:0] checkpoint_counter, checkpoint_counter_d, checkpoint_counter_q;
     dcache_req_i_t                 checkpoint_output;
+    logic                        csr_reset_d, csr_reset_q;
 
     logic [$clog2(NR_ROWS)-1:0]  index, update_pc;
     logic [ROW_ADDR_BITS-1:0]    update_row_index;
@@ -66,6 +67,7 @@ module bht #(
 
     //assignments for checkpointing
     assign bht_checkpoint_o = checkpoint_output;
+    assign rst_checkpoint_o = csr_reset_q;
 
     always_comb begin : update_bht
         csr_reset_d = csr_reset_q;
@@ -95,19 +97,24 @@ module bht #(
             csr_reset_d = 1'b0;
         end else begin //not enabled
             //write code that pushes stuff out into DCACHE
+            checkpoint_counter = checkpoint_counter_q;
             if(checkpoint_counter == NR_ENTRIES) begin //when all entries have been written out, reset the CSR to re-enable BHT
                 csr_reset_d = 1'b1;
             end else begin  //else, continue with the outputting
                 csr_reset_d = 1'b0;
                 //writing to interim register that is then assigned aboved
-                checkpoint_output.address_index = checkpoint_addr_i[riscv::DCACHE_INDEX_WIDTH-1:0];
+                checkpoint_output.address_index = checkpoint_addr_i[ariane_pkg::DCACHE_INDEX_WIDTH-1:0];
                 checkpoint_output.address_tag   = checkpoint_addr_i[riscv::PLEN-1:riscv::PLEN-1-DCACHE_TAG_WIDTH];
-                checkpoint_output.data_wdata    = {bht_q[checkpoint_counter[$clog2(NR_ENTRIES)-1:1]][checkpoint_counter[0]].valid, 
-                                                   bht_q[checkpoint_counter[$clog2(NR_ENTRIES)-1:1]][checkpoint_counter[0]].saturation_counter};   //there's only 3 bits of data, per entry, we could theoretically pack 21 entries into one write, would save on time
-                checkpoint_output.data_we       = 1'b1;
+                //checkpoint_output.data_wdata    = {bht_q[checkpoint_counter[$clog2(NR_ENTRIES)-1:1]][checkpoint_counter[0]].valid, 
+                //                                   bht_q[checkpoint_counter[$clog2(NR_ENTRIES)-1:1]][checkpoint_counter[0]].saturation_counter};   //there's only 3 bits of data, per entry, we could theoretically pack 21 entries into one write, would save on time
+                checkpoint_output.data_wdata    = '0;
+                checkpoint_output.data_req      = 1'b1;
+                checkpoint_output.data_we       = 1'b0;
                 checkpoint_output.data_be       = 8'b1;
                 checkpoint_output.data_size     = 2'b11; //found that this was the default for data_size assignment
-                checkpoint_counter = checkpoint_counter + 1;
+                checkpoint_output.kill_req      = 1'b0;
+                checkpoint_output.tag_valid     = 1'b1;
+                checkpoint_counter_d = checkpoint_counter + 1;
             end
         end
     end
@@ -119,6 +126,17 @@ module bht #(
                     bht_q[i][j] <= '0;
                 end
             end
+
+            // checkpoint_output.address_index <= 0;
+            // checkpoint_output.address_tag   <= 0;
+            // checkpoint_output.data_wdata    <= 0;
+            // checkpoint_output.data_req      <= 0;                 
+            // checkpoint_output.data_we       <= 0;
+            // checkpoint_output.data_be       <= 0;
+            // checkpoint_output.data_size     <= 0;
+            // checkpoint_output.kill_req      <= 0;
+            // checkpoint_output.tag_valid     <= 0;
+
         end else if(enable_i) begin
             // evict all entries
             if (flush_i) begin
@@ -131,9 +149,11 @@ module bht #(
             end else begin
                 bht_q <= bht_d;
             end
-            checkpoint_counter <= 0;
+            checkpoint_counter_q <= 0;
+            csr_reset_q <= csr_reset_d;
         end else begin
-            
+            checkpoint_counter_q <= checkpoint_counter_d;
+            csr_reset_q <= csr_reset_d;
         end
     end
 endmodule

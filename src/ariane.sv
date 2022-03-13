@@ -174,6 +174,7 @@ module ariane #(
   logic                     single_step_csr_commit;
   logic [63:0]              snoop_csr_if;
   logic [63:0]              addr_csr_if;
+  logic                     ckpt_reset_if_csr;
   // ----------------------------
   // Performance Counters <-> *
   // ----------------------------
@@ -223,6 +224,12 @@ module ariane #(
   dcache_req_o_t [2:0]      dcache_req_ports_cache_ex;
   logic                     dcache_commit_wbuffer_empty;
 
+  // ----------------
+  // DCache <-> IF
+  // ----------------
+  dcache_req_i_t            ckpt_data_if_dcache;
+  dcache_req_o_t            ckpt_data_dcache_if;
+
   // --------------
   // Frontend
   // --------------
@@ -247,7 +254,10 @@ module ariane #(
     .fetch_entry_valid_o ( fetch_valid_if_id             ),
     .fetch_entry_ready_i ( fetch_ready_id_if             ),
     .bp_snoop_i          ( snoop_csr_if                  ),
-    .bp_addr_i           ( addr_csr_if                   )
+    .bp_addr_i           ( addr_csr_if                   ),
+    .bht_dcache_ckpt_o   ( ckpt_data_if_dcache           ),
+    .bht_dcache_ckpt_i   ( ckpt_data_dcache_if           ),
+    .bht_csr_reset_o     ( ckpt_reset_if_csr             ),
     .*
   );
 
@@ -523,6 +533,7 @@ module ariane #(
     .time_irq_i,
     .bp_snoop_o             ( snoop_csr_if                  ),
     .bp_addr_o              ( addr_csr_if                   ),
+    .reset_ckpt_i           ( ckpt_reset_if_csr             ),
     .*
   );
   // ------------------------
@@ -585,7 +596,7 @@ module ariane #(
   // -------------------
   // Cache Subsystem
   // -------------------
-
+ dcache_req_o_t dummy;
 `ifdef WT_DCACHE
   // this is a cache subsystem that is compatible with OpenPiton
   wt_cache_subsystem #(
@@ -611,8 +622,16 @@ module ariane #(
     .dcache_amo_resp_o     ( amo_resp                    ),
     // from PTW, Load Unit  and Store Unit
     .dcache_miss_o         ( dcache_miss_cache_perf      ),
-    .dcache_req_ports_i    ( dcache_req_ports_ex_cache   ),  //{dcache_req_ports_ex_cache[2], ourstuff, dcache_req_ports_ex_cache[1:0]}
-    .dcache_req_ports_o    ( dcache_req_ports_cache_ex   ),
+    // .dcache_req_ports_i    ( {dcache_req_ports_ex_cache[2], 
+    //                          ckpt_data_if_dcache, 
+    //                          dcache_req_ports_ex_cache[1:0]}),  //{dcache_req_ports_ex_cache[2], ckpt_reset_if_csr, dcache_req_ports_ex_cache[1:0]}
+    // .dcache_req_ports_o    ( {dcache_req_ports_cache_ex[2],
+    //                          ckpt_data_dcache_if,
+    //                          dcache_req_ports_cache_ex[1:0]}),
+    .dcache_req_ports_i    ( {//ckpt_data_if_dcache,
+                         dcache_req_ports_ex_cache[2:0]}),
+    .dcache_req_ports_o    ( {//ckpt_data_dcache_if,
+                            dcache_req_ports_cache_ex[2:0]}),
     // write buffer status
     .wbuffer_empty_o       ( dcache_commit_wbuffer_empty ),
 `ifdef PITON_ARIANE

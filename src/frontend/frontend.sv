@@ -46,7 +46,10 @@ module frontend #(
   output logic               fetch_entry_valid_o, // instruction in IF is valid
   input  logic               fetch_entry_ready_i, // ID acknowledged this instruction
   input  logic  [63:0]       bp_snoop_i,          // branch predictor checkpointing snoop input
-  input  logic  [63:0]       bp_addr_i
+  input  logic  [63:0]       bp_addr_i,
+  output dcache_req_i_t      bht_dcache_ckpt_o,
+  input  dcache_req_o_t      bht_dcache_ckpt_i,
+  output logic               bht_csr_reset_o
 );
     // Instruction Cache Registers, from I$
     logic [FETCH_WIDTH-1:0] icache_data_q;
@@ -387,7 +390,9 @@ module frontend #(
       .bht_update_i     ( bht_update       ),
       .checkpoint_addr_i( bp_addr_i        ),
       .bht_prediction_o ( bht_prediction   ),
-      
+      .bht_checkpoint_o ( bht_dcache_ckpt_o),
+      .bht_checkpoint_i ( bht_dcache_ckpt_i),
+      .rst_checkpoint_o ( bht_csr_reset_o  )
     );
 
     // we need to inspect up to INSTR_PER_FETCH instructions for branches

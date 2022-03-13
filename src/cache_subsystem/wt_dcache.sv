@@ -37,8 +37,8 @@ module wt_dcache #(
   output amo_resp_t                      amo_resp_o,
 
   // Request ports
-  input  dcache_req_i_t [3:0]            req_ports_i,
-  output dcache_req_o_t [3:0]            req_ports_o,
+  input  dcache_req_i_t [2:0]            req_ports_i,
+  output dcache_req_o_t [2:0]            req_ports_o,
 
   input  logic                           mem_rtrn_vld_i,
   input  dcache_rtrn_t                   mem_rtrn_i,
@@ -163,7 +163,7 @@ module wt_dcache #(
 ///////////////////////////////////////////////////////
 
   // note: last read port is used by the write buffer
-  for(genvar k=0; k<NumPorts-1; k++) begin : gen_rd_ports
+  for(genvar k=0; k<NumPorts-2; k++) begin : gen_rd_ports
     // set these to high prio ports
     assign rd_prio[k] = 1'b1;
 
@@ -208,7 +208,7 @@ module wt_dcache #(
 ///////////////////////////////////////////////////////
 
   // set read port to low priority
-  assign rd_prio[2] = 1'b0;
+  assign rd_prio[3] = 1'b0;
 
   wt_dcache_wbuffer #(
     .ArianeCfg     ( ArianeCfg     )
@@ -220,8 +220,8 @@ module wt_dcache #(
     .cache_en_i      ( cache_en            ),
     // .cache_en_i      ( '0                  ),
     // request ports from core (store unit)
-    .req_port_i      ( req_ports_i   [3]   ),
-    .req_port_o      ( req_ports_o   [3]   ),
+    .req_port_i      ( req_ports_i   [2]   ),
+    .req_port_o      ( req_ports_o   [2]   ),
     // miss unit interface
     .miss_req_o      ( miss_req      [3]   ),
     .miss_ack_i      ( miss_ack      [3]   ),
