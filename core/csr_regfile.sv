@@ -83,6 +83,12 @@ module csr_regfile import ariane_pkg::*; #(
     output logic[riscv::XLEN-1:0] perf_data_o,                // write data to performance counter module
     input  logic[riscv::XLEN-1:0] perf_data_i,                // read data from performance counter module
     output logic                  perf_we_o,
+
+    // Branch Predictor Snooping
+    output logic  [63:0]          bp_snoop_o,                 // snooping specific CSR reg to trigger predictor state checkpointing
+    output logic  [63:0]          bp_addr_o,
+    input  logic                  reset_ckpt_i,
+
     // PMPs
     output riscv::pmpcfg_t [15:0] pmpcfg_o,   // PMP configuration containing pmpcfg for max 16 PMPs
     output logic [15:0][riscv::PLEN-3:0] pmpaddr_o            // PMP addresses
@@ -138,6 +144,11 @@ module csr_regfile import ariane_pkg::*; #(
 
     logic [63:0] cycle_q,     cycle_d;
     logic [63:0] instret_q,   instret_d;
+
+    //Checkpointing
+
+    logic [63:0] bp_snoop_q,  bp_snoop_d;
+    logic [63:0] bp_addr_q,   bp_addr_d;
 
     riscv::pmpcfg_t [15:0]    pmpcfg_q,  pmpcfg_d;
     logic [15:0][riscv::PLEN-3:0]        pmpaddr_q,  pmpaddr_d;
@@ -205,6 +216,9 @@ module csr_regfile import ariane_pkg::*; #(
                 riscv::CSR_TDATA1:;  // not implemented
                 riscv::CSR_TDATA2:;  // not implemented
                 riscv::CSR_TDATA3:;  // not implemented
+                // checkpointing registers
+                riscv::CSR_TBRANCH:            csr_rdata = bp_snoop_q;
+                riscv::CSR_TBPADDR:            csr_rdata = bp_addr_q;
                 // supervisor registers
                 riscv::CSR_SSTATUS: begin
                     csr_rdata = mstatus_extended & ariane_pkg::SMODE_STATUS_READ_MASK[riscv::XLEN-1:0];
@@ -399,6 +413,15 @@ module csr_regfile import ariane_pkg::*; #(
         stval_d                 = stval_q;
         satp_d                  = satp_q;
 
+        //checkpointing
+
+        bp_snoop_d              = bp_snoop_q;
+        bp_addr_d               = bp_addr_q;
+
+        if (reset_ckpt_i) begin
+            bp_snoop_d = 64'b0;
+        end
+
         en_ld_st_translation_d  = en_ld_st_translation_q;
         dirty_fp_state_csr      = 1'b0;
 
@@ -467,6 +490,9 @@ module csr_regfile import ariane_pkg::*; #(
                 riscv::CSR_TDATA1:;  // not implemented
                 riscv::CSR_TDATA2:;  // not implemented
                 riscv::CSR_TDATA3:;  // not implemented
+                //checkpointing
+                riscv::CSR_TBRANCH:            begin if(!reset_ckpt_i) begin bp_snoop_d = csr_wdata; end end
+                riscv::CSR_TBPADDR:            bp_addr_d  = csr_wdata;
                 // sstatus is a subset of mstatus - mask it accordingly
                 riscv::CSR_SSTATUS: begin
                     mask = ariane_pkg::SMODE_STATUS_WRITE_MASK[riscv::XLEN-1:0];
@@ -1084,6 +1110,10 @@ module csr_regfile import ariane_pkg::*; #(
     assign debug_mode_o     = debug_mode_q;
     assign single_step_o    = dcsr_q.step;
 
+    // branch predictor checkpointing output
+    assign bp_snoop_o       = bp_snoop_q;
+    assign bp_addr_o        = bp_addr_q;
+
     // sequential process
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (~rst_ni) begin
@@ -1146,6 +1176,9 @@ module csr_regfile import ariane_pkg::*; #(
             dpc_q                  <= dpc_d;
             dscratch0_q            <= dscratch0_d;
             dscratch1_q            <= dscratch1_d;
+            // user mode trigger
+            bp_snoop_q             <= bp_snoop_d;
+            bp_addr_q              <= bp_addr_d;
             // machine mode registers
             mstatus_q              <= mstatus_d;
             mtvec_rst_load_q       <= 1'b0;

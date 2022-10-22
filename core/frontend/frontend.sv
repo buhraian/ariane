@@ -43,7 +43,12 @@ module frontend import ariane_pkg::*; #(
   // instruction output port -> to processor back-end
   output fetch_entry_t       fetch_entry_o,       // fetch entry containing all relevant data for the ID stage
   output logic               fetch_entry_valid_o, // instruction in IF is valid
-  input  logic               fetch_entry_ready_i  // ID acknowledged this instruction
+  input  logic               fetch_entry_ready_i, // ID acknowledged this instruction
+  input  logic  [63:0]       bp_snoop_i,          // branch predictor checkpointing snoop input
+  input  logic  [63:0]       bp_addr_i,
+  output dcache_req_i_t      bht_dcache_ckpt_o,
+  input  dcache_req_o_t      bht_dcache_ckpt_i,
+  output logic               bht_csr_reset_o
 );
     // Instruction Cache Registers, from I$
     logic [FETCH_WIDTH-1:0] icache_data_q;
@@ -262,6 +267,9 @@ module frontend import ariane_pkg::*; #(
     bht_update_t bht_update;
     btb_update_t btb_update;
 
+    logic enable_bht;
+    assign enable_bht       = (bp_snoop_i == 64'b1) ? 1'b0 : 1'b1; // enables bht only when snoop is low
+    
     // assert on branch, deassert when resolved
     logic speculative_q,speculative_d;
     assign speculative_d = (speculative_q && !resolved_branch_i.valid || |is_branch || |is_return || |is_jalr) && !flush_i;
@@ -418,7 +426,12 @@ module frontend import ariane_pkg::*; #(
       .debug_mode_i,
       .vpc_i            ( icache_vaddr_q   ),
       .bht_update_i     ( bht_update       ),
-      .bht_prediction_o ( bht_prediction   )
+      .bht_prediction_o ( bht_prediction   ),
+      .enable_i         ( enable_bht       ),
+      .checkpoint_addr_i( bp_addr_i        ),
+      .bht_checkpoint_o ( bht_dcache_ckpt_o),
+      .bht_checkpoint_i ( bht_dcache_ckpt_i),
+      .rst_checkpoint_o ( bht_csr_reset_o  )
     );
 
     // we need to inspect up to INSTR_PER_FETCH instructions for branches

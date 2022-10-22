@@ -23,8 +23,13 @@ module bht #(
     input  logic                        debug_mode_i,
     input  logic [riscv::VLEN-1:0]      vpc_i,
     input  ariane_pkg::bht_update_t     bht_update_i,
+    input  logic                        enable_i,
+    input  logic [63:0]                 checkpoint_addr_i,
     // we potentially need INSTR_PER_FETCH predictions/cycle
-    output ariane_pkg::bht_prediction_t [ariane_pkg::INSTR_PER_FETCH-1:0] bht_prediction_o
+    output ariane_pkg::bht_prediction_t [ariane_pkg::INSTR_PER_FETCH-1:0] bht_prediction_o,
+    output ariane_pkg::dcache_req_i_t   bht_checkpoint_o, //output to Dcache
+    input  ariane_pkg::dcache_req_o_t   bht_checkpoint_i,
+    output logic                        rst_checkpoint_o //output to CSR to reset 0x808 to 0 after all data has been checkpointed
 );
     // the last bit is always zero, we don't need it for indexing
     localparam OFFSET = ariane_pkg::RVC == 1'b1 ? 1 : 2;
@@ -42,6 +47,10 @@ module bht #(
         logic       valid;
         logic [1:0] saturation_counter;
     } bht_d[NR_ROWS-1:0][ariane_pkg::INSTR_PER_FETCH-1:0], bht_q[NR_ROWS-1:0][ariane_pkg::INSTR_PER_FETCH-1:0];
+    
+    logic [$clog2(NR_ENTRIES)-1:0] checkpoint_counter, checkpoint_counter_d, checkpoint_counter_q;
+    ariane_pkg::dcache_req_i_t     checkpoint_output;
+    logic                        csr_reset_d, csr_reset_q;
 
     logic [$clog2(NR_ROWS)-1:0]  index, update_pc;
     logic [ROW_INDEX_BITS-1:0]    update_row_index;
@@ -57,31 +66,60 @@ module bht #(
 
     // prediction assignment
     for (genvar i = 0; i < ariane_pkg::INSTR_PER_FETCH; i++) begin : gen_bht_output
-        assign bht_prediction_o[i].valid = bht_q[index][i].valid;
-        assign bht_prediction_o[i].taken = bht_q[index][i].saturation_counter[1] == 1'b1;
+        assign bht_prediction_o[i].valid = (enable_i) ? bht_q[index][i].valid : 1'b0;
+        assign bht_prediction_o[i].taken = (enable_i) ? bht_q[index][i].saturation_counter[1] == 1'b1 : 1'b0;
     end
 
+    //assignments for checkpointing
+    assign bht_checkpoint_o = checkpoint_output;
+    assign rst_checkpoint_o = csr_reset_q;
+
     always_comb begin : update_bht
-        bht_d = bht_q;
-        saturation_counter = bht_q[update_pc][update_row_index].saturation_counter;
+        csr_reset_d = csr_reset_q;
+        if(enable_i) begin
+            bht_d = bht_q;
+            saturation_counter = bht_q[update_pc][update_row_index].saturation_counter;
 
-        if (bht_update_i.valid && !debug_mode_i) begin
-            bht_d[update_pc][update_row_index].valid = 1'b1;
+            if (bht_update_i.valid && !debug_mode_i) begin
+                bht_d[update_pc][update_row_index].valid = 1'b1;
 
-            if (saturation_counter == 2'b11) begin
-                // we can safely decrease it
-                if (!bht_update_i.taken)
-                    bht_d[update_pc][update_row_index].saturation_counter = saturation_counter - 1;
-            // then check if it saturated in the negative regime e.g.: branch not taken
-            end else if (saturation_counter == 2'b00) begin
-                // we can safely increase it
-                if (bht_update_i.taken)
-                    bht_d[update_pc][update_row_index].saturation_counter = saturation_counter + 1;
-            end else begin // otherwise we are not in any boundaries and can decrease or increase it
-                if (bht_update_i.taken)
-                    bht_d[update_pc][update_row_index].saturation_counter = saturation_counter + 1;
-                else
-                    bht_d[update_pc][update_row_index].saturation_counter = saturation_counter - 1;
+                if (saturation_counter == 2'b11) begin
+                    // we can safely decrease it
+                    if (!bht_update_i.taken)
+                        bht_d[update_pc][update_row_index].saturation_counter = saturation_counter - 1;
+                // then check if it saturated in the negative regime e.g.: branch not taken
+                end else if (saturation_counter == 2'b00) begin
+                    // we can safely increase it
+                    if (bht_update_i.taken)
+                        bht_d[update_pc][update_row_index].saturation_counter = saturation_counter + 1;
+                end else begin // otherwise we are not in any boundaries and can decrease or increase it
+                    if (bht_update_i.taken)
+                        bht_d[update_pc][update_row_index].saturation_counter = saturation_counter + 1;
+                    else
+                        bht_d[update_pc][update_row_index].saturation_counter = saturation_counter - 1;
+                end
+            end
+            csr_reset_d = 1'b0;
+        end else begin //not enabled
+            //write code that pushes stuff out into DCACHE
+            checkpoint_counter = checkpoint_counter_q;
+            if(checkpoint_counter == NR_ENTRIES) begin //when all entries have been written out, reset the CSR to re-enable BHT
+                csr_reset_d = 1'b1;
+            end else begin  //else, continue with the outputting
+                csr_reset_d = 1'b0;
+                //writing to interim register that is then assigned aboved
+                checkpoint_output.address_index = checkpoint_addr_i[ariane_pkg::DCACHE_INDEX_WIDTH-1:0];
+                checkpoint_output.address_tag   = checkpoint_addr_i[riscv::PLEN-1:riscv::PLEN-1-ariane_pkg::DCACHE_TAG_WIDTH];
+                //checkpoint_output.data_wdata    = {bht_q[checkpoint_counter[$clog2(NR_ENTRIES)-1:1]][checkpoint_counter[0]].valid, 
+                //                                   bht_q[checkpoint_counter[$clog2(NR_ENTRIES)-1:1]][checkpoint_counter[0]].saturation_counter};   //there's only 3 bits of data, per entry, we could theoretically pack 21 entries into one write, would save on time
+                checkpoint_output.data_wdata    = '0;
+                checkpoint_output.data_req      = 1'b1;
+                checkpoint_output.data_we       = 1'b0;
+                checkpoint_output.data_be       = 8'b1;
+                checkpoint_output.data_size     = 2'b11; //found that this was the default for data_size assignment
+                checkpoint_output.kill_req      = 1'b0;
+                checkpoint_output.tag_valid     = 1'b1;
+                checkpoint_counter_d = checkpoint_counter + 1;
             end
         end
     end
@@ -93,7 +131,16 @@ module bht #(
                     bht_q[i][j] <= '0;
                 end
             end
-        end else begin
+            // checkpoint_output.address_index <= 0;
+            // checkpoint_output.address_tag   <= 0;
+            // checkpoint_output.data_wdata    <= 0;
+            // checkpoint_output.data_req      <= 0;                 
+            // checkpoint_output.data_we       <= 0;
+            // checkpoint_output.data_be       <= 0;
+            // checkpoint_output.data_size     <= 0;
+            // checkpoint_output.kill_req      <= 0;
+            // checkpoint_output.tag_valid     <= 0;
+        end else if(enable_i) begin
             // evict all entries
             if (flush_i) begin
                 for (int i = 0; i < NR_ROWS; i++) begin
@@ -105,6 +152,11 @@ module bht #(
             end else begin
                 bht_q <= bht_d;
             end
+            checkpoint_counter_q <= 0;
+            csr_reset_q <= csr_reset_d;
+        end else begin
+            checkpoint_counter_q <= checkpoint_counter_d;
+            csr_reset_q <= csr_reset_d;
         end
     end
 endmodule

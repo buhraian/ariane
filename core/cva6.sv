@@ -202,6 +202,12 @@ module cva6 import ariane_pkg::*; #(
   logic                     single_step_csr_commit;
   riscv::pmpcfg_t [15:0]    pmpcfg;
   logic [15:0][riscv::PLEN-3:0] pmpaddr;
+
+  //Checkpointing
+
+  logic [63:0]              snoop_csr_if;
+  logic [63:0]              addr_csr_if;
+  logic                     ckpt_reset_if_csr;
   // ----------------------------
   // Performance Counters <-> *
   // ----------------------------
@@ -257,6 +263,13 @@ module cva6 import ariane_pkg::*; #(
   logic [(riscv::XLEN/8)-1:0]           lsu_wmask;
   logic [ariane_pkg::TRANS_ID_BITS-1:0] lsu_addr_trans_id;
 
+
+  // ----------------
+  // DCache <-> IF
+  // ----------------
+  dcache_req_i_t            ckpt_data_if_dcache;
+  dcache_req_o_t            ckpt_data_dcache_if;
+
   // --------------
   // Frontend
   // --------------
@@ -280,6 +293,12 @@ module cva6 import ariane_pkg::*; #(
     .fetch_entry_o       ( fetch_entry_if_id             ),
     .fetch_entry_valid_o ( fetch_valid_if_id             ),
     .fetch_entry_ready_i ( fetch_ready_id_if             ),
+    //Checkpointing
+    .bp_snoop_i          ( snoop_csr_if                  ),
+    .bp_addr_i           ( addr_csr_if                   ),
+    .bht_dcache_ckpt_o   ( ckpt_data_if_dcache           ),
+    .bht_dcache_ckpt_i   ( ckpt_data_dcache_if           ),
+    .bht_csr_reset_o     ( ckpt_reset_if_csr             ),
     .*
   );
 
@@ -492,7 +511,7 @@ module cva6 import ariane_pkg::*; #(
     .icache_areq_i          ( icache_areq_cache_ex        ),
     .icache_areq_o          ( icache_areq_ex_cache        ),
     // DCACHE interfaces
-    .dcache_req_ports_i     ( dcache_req_ports_cache_ex   ),
+    .dcache_req_ports_i     ( dcache_req_ports_cache_ex   ), 
     .dcache_req_ports_o     ( dcache_req_ports_ex_cache   ),
     .dcache_wbuffer_empty_i ( dcache_commit_wbuffer_empty ),
     .dcache_wbuffer_not_ni_i ( dcache_commit_wbuffer_not_ni ),
@@ -608,6 +627,11 @@ module cva6 import ariane_pkg::*; #(
     .ipi_i,
     .irq_i,
     .time_irq_i,
+
+    //Checkpointing
+    .bp_snoop_o             ( snoop_csr_if                  ),
+    .bp_addr_o              ( addr_csr_if                   ),
+    .reset_ckpt_i           ( ckpt_reset_if_csr             ),
     .*
   );
   // ------------------------
@@ -696,7 +720,7 @@ module cva6 import ariane_pkg::*; #(
     .dcache_amo_resp_o     ( amo_resp                    ),
     // from PTW, Load Unit  and Store Unit
     .dcache_miss_o         ( dcache_miss_cache_perf      ),
-    .dcache_req_ports_i    ( dcache_req_ports_ex_cache   ),
+    .dcache_req_ports_i    ( dcache_req_ports_ex_cache   ), //{dcache_req_ports_ex_cache[2], ourstuff, dcache_req_ports_ex_cache[1:0]}
     .dcache_req_ports_o    ( dcache_req_ports_cache_ex   ),
     // write buffer status
     .wbuffer_empty_o       ( dcache_commit_wbuffer_empty ),
