@@ -43,14 +43,19 @@ module bht #(
     // we are not interested in all bits of the address
     unread i_unread (.d_i(|vpc_i));
 
+    localparam ENTRIES_PER_FETCH = riscv::XLEN / 4; //4 bits per entry, XLEN bits per cache fetch
+    localparam ROWS_PER_FETCH = ENTRIES_PER_FETCH / ariane_pkg::INSTR_PER_FETCH; //how many rows can we fill at each time
+
     struct packed {
         logic       valid;
         logic [1:0] saturation_counter;
     } bht_d[NR_ROWS-1:0][ariane_pkg::INSTR_PER_FETCH-1:0], bht_q[NR_ROWS-1:0][ariane_pkg::INSTR_PER_FETCH-1:0];
     
-    logic [$clog2(NR_ENTRIES)-1:0] checkpoint_counter, checkpoint_counter_d, checkpoint_counter_q;
-    ariane_pkg::dcache_req_i_t     checkpoint_output;
-    logic                        csr_reset_d, csr_reset_q;
+    logic [$clog2(NR_ENTRIES):0] checkpoint_counter_d, checkpoint_counter_q;
+    ariane_pkg::dcache_req_i_t     checkpoint_request_d, checkpoint_request_q;
+    logic                          csr_reset_d, csr_reset_q;
+
+    logic [7:0] rows_completed_q, rows_completed_d;
 
     logic [$clog2(NR_ROWS)-1:0]  index, update_pc;
     logic [ROW_INDEX_BITS-1:0]    update_row_index;
@@ -71,11 +76,10 @@ module bht #(
     end
 
     //assignments for checkpointing
-    assign bht_checkpoint_o = checkpoint_output;
+    assign bht_checkpoint_o = checkpoint_request_q;
     assign rst_checkpoint_o = csr_reset_q;
 
     always_comb begin : update_bht
-        csr_reset_d = csr_reset_q;
         if(enable_i) begin
             bht_d = bht_q;
             saturation_counter = bht_q[update_pc][update_row_index].saturation_counter;
@@ -99,29 +103,96 @@ module bht #(
                         bht_d[update_pc][update_row_index].saturation_counter = saturation_counter - 1;
                 end
             end
-            csr_reset_d = 1'b0;
-        end else begin //not enabled
-            //write code that pushes stuff out into DCACHE
-            checkpoint_counter = checkpoint_counter_q;
-            if(checkpoint_counter == NR_ENTRIES) begin //when all entries have been written out, reset the CSR to re-enable BHT
-                csr_reset_d = 1'b1;
-            end else begin  //else, continue with the outputting
-                csr_reset_d = 1'b0;
-                //writing to interim register that is then assigned aboved
-                checkpoint_output.address_index = checkpoint_addr_i[ariane_pkg::DCACHE_INDEX_WIDTH-1:0];
-                checkpoint_output.address_tag   = checkpoint_addr_i[riscv::PLEN-1:riscv::PLEN-1-ariane_pkg::DCACHE_TAG_WIDTH];
-                //checkpoint_output.data_wdata    = {bht_q[checkpoint_counter[$clog2(NR_ENTRIES)-1:1]][checkpoint_counter[0]].valid, 
-                //                                   bht_q[checkpoint_counter[$clog2(NR_ENTRIES)-1:1]][checkpoint_counter[0]].saturation_counter};   //there's only 3 bits of data, per entry, we could theoretically pack 21 entries into one write, would save on time
-                checkpoint_output.data_wdata    = '0;
-                checkpoint_output.data_req      = 1'b1;
-                checkpoint_output.data_we       = 1'b0;
-                checkpoint_output.data_be       = 8'b1;
-                checkpoint_output.data_size     = 2'b11; //found that this was the default for data_size assignment
-                checkpoint_output.kill_req      = 1'b0;
-                checkpoint_output.tag_valid     = 1'b1;
-                checkpoint_counter_d = checkpoint_counter + 1;
+//don't directly assign into bht_d below, assign it into a logic and then write it through here
+        end else begin //turned off, microwaving
+            //assign to bht_d
+            bht_d = bht_q;
+            rows_completed_d = rows_completed_q;
+            checkpoint_counter_d = checkpoint_counter_q;
+
+            if (bht_checkpoint_i.data_rvalid) begin //new batch of data
+                checkpoint_counter_d = checkpoint_counter_q + ENTRIES_PER_FETCH;
+                rows_completed_d = rows_completed_q + ROWS_PER_FETCH; 
+                
+                for(int i = 0; i < ROWS_PER_FETCH; i++) begin
+                    for(int j = 0; j < ariane_pkg::INSTR_PER_FETCH; j++) begin
+                        bht_d[rows_completed_q+i][j] = bht_checkpoint_i.data_rdata[riscv::XLEN - (4*ariane_pkg::INSTR_PER_FETCH*i + (4*ariane_pkg::INSTR_PER_FETCH - 4)*j) - 4  +: 3];
+                    end
+                end
             end
         end
+    end
+
+    typedef enum logic[1:0] {IDLE, SEND_INDEX, SEND_TAG} state_e;
+    state_e ckpt_state_d, ckpt_state_q;
+
+    logic tag_written_d, tag_written_q;
+
+    logic [ariane_pkg::DCACHE_TAG_WIDTH]   ckpt_tag_d, ckpt_tag_q;
+    logic [ariane_pkg::DCACHE_INDEX_WIDTH] ckpt_index_d, ckpt_index_q;
+
+    always_comb begin : checkpointing_bht_fsm//not enabled, make this into a state machine 
+        //step 1 IDLE
+        //step 2 SEND INDEX
+        //step 3 SEND TAG
+        ckpt_state_d         = ckpt_state_q;
+        checkpoint_request_d = checkpoint_request_q;
+        ckpt_tag_d           = ckpt_tag_q;
+        ckpt_index_d         = ckpt_index_q;
+        csr_reset_d          = csr_reset_q;
+        tag_written_d        = tag_written_q;
+        case(ckpt_state_q)
+            IDLE: begin
+                csr_reset_d = 0; 
+                if(!rst_checkpoint_o) begin
+                    ckpt_state_d = SEND_INDEX;
+                end else begin
+                    ckpt_state_d = IDLE;
+                end
+            end
+            SEND_INDEX: begin 
+                //change req
+                checkpoint_request_d.tag_valid = 1'b0;
+                ckpt_state_d = SEND_INDEX;
+
+                //checkpoint_request_d.address_tag = checkpoint_addr_i[63:63-ariane_pkg::DCACHE_TAG_WIDTH];
+                //checkpoint_request_d.address_index = checkpoint_addr_i[63-ariane_pkg::DCACHE_TAG_WIDTH-1:63-ariane_pkg::DCACHE_TAG_WIDTH-1-ariane_pkg::DCACHE_INDEX_WIDTH] + 4*checkpoint_counter_q;
+
+                checkpoint_request_d.address_tag = ckpt_tag_q;
+                checkpoint_request_d.address_index = ckpt_index_q;
+                checkpoint_request_d.data_size = 2'b10;
+                checkpoint_request_d.data_be = '1;
+
+                if(checkpoint_counter_q == NR_ENTRIES) begin
+                    ckpt_state_d = IDLE;
+                    csr_reset_d = 1;
+                end else begin
+                    //send req
+                    checkpoint_request_d.data_req = 1'b1;
+                    tag_written_d = 0;
+                    if(bht_checkpoint_i.data_gnt)begin
+                        ckpt_state_d = SEND_TAG;
+                    end
+                end
+            end
+            SEND_TAG: begin 
+                //send tag_valid with tag
+                checkpoint_request_d.data_req = 1'b0;
+                tag_written_d = 1;
+                if(tag_written_q == 0) begin
+                    checkpoint_request_d.tag_valid = 1'b1;
+                end else begin
+                    checkpoint_request_d.tag_valid = 1'b0;
+                end
+                if(bht_checkpoint_i.data_rvalid) begin
+                    ckpt_state_d = SEND_INDEX;
+                    ckpt_index_d = ckpt_index_q + 8;
+                    tag_written_d = 0;
+                end else begin
+                    ckpt_state_d = SEND_TAG;
+                end
+            end
+        endcase
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -131,15 +202,13 @@ module bht #(
                     bht_q[i][j] <= '0;
                 end
             end
-            // checkpoint_output.address_index <= 0;
-            // checkpoint_output.address_tag   <= 0;
-            // checkpoint_output.data_wdata    <= 0;
-            // checkpoint_output.data_req      <= 0;                 
-            // checkpoint_output.data_we       <= 0;
-            // checkpoint_output.data_be       <= 0;
-            // checkpoint_output.data_size     <= 0;
-            // checkpoint_output.kill_req      <= 0;
-            // checkpoint_output.tag_valid     <= 0;
+            checkpoint_counter_q <= 0;
+            checkpoint_request_q <= '0;
+            ckpt_state_q <= IDLE;
+            rows_completed_q <= 0;
+            ckpt_tag_q <= '0;
+            ckpt_index_q <= '0;
+            tag_written_q <= 0;
         end else if(enable_i) begin
             // evict all entries
             if (flush_i) begin
@@ -153,10 +222,22 @@ module bht #(
                 bht_q <= bht_d;
             end
             checkpoint_counter_q <= 0;
-            csr_reset_q <= csr_reset_d;
-        end else begin
+            checkpoint_request_q <= '0;
+            csr_reset_q <= 0;
+            tag_written_q <= 0;
+            rows_completed_q <= 0;
+            ckpt_tag_q <= checkpoint_addr_i[ariane_pkg::DCACHE_INDEX_WIDTH+ariane_pkg::DCACHE_TAG_WIDTH-1:ariane_pkg::DCACHE_INDEX_WIDTH];
+            ckpt_index_q <= checkpoint_addr_i[ariane_pkg::DCACHE_INDEX_WIDTH-1:0];
+        end else begin //not reset and not enabled
+            checkpoint_request_q <= checkpoint_request_d;
             checkpoint_counter_q <= checkpoint_counter_d;
             csr_reset_q <= csr_reset_d;
+            ckpt_state_q <= ckpt_state_d;
+            rows_completed_q <= rows_completed_d;
+            ckpt_tag_q <= ckpt_tag_d;
+            ckpt_index_q <= ckpt_index_d;
+            tag_written_q <= tag_written_d;
+            bht_q <= bht_d;
         end
     end
 endmodule

@@ -720,8 +720,8 @@ module cva6 import ariane_pkg::*; #(
     .dcache_amo_resp_o     ( amo_resp                    ),
     // from PTW, Load Unit  and Store Unit
     .dcache_miss_o         ( dcache_miss_cache_perf      ),
-    .dcache_req_ports_i    ( dcache_req_ports_ex_cache   ), //{dcache_req_ports_ex_cache[2], ourstuff, dcache_req_ports_ex_cache[1:0]}
-    .dcache_req_ports_o    ( dcache_req_ports_cache_ex   ),
+    .dcache_req_ports_i    ( {dcache_req_ports_ex_cache[2], ckpt_data_if_dcache, dcache_req_ports_ex_cache[1:0]}), //{dcache_req_ports_ex_cache[2], ourstuff, dcache_req_ports_ex_cache[1:0]}
+    .dcache_req_ports_o    ( {dcache_req_ports_cache_ex[2], ckpt_data_dcache_if, dcache_req_ports_cache_ex[1:0]}),
     // write buffer status
     .wbuffer_empty_o       ( dcache_commit_wbuffer_empty ),
     .wbuffer_not_ni_o      ( dcache_commit_wbuffer_not_ni ),

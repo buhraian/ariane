@@ -32,7 +32,7 @@ package wt_cache_pkg;
 
 `ifndef L15_THREADID_WIDTH
     // this results in 8 pending tx slots in the writebuffer
-    `define L15_THREADID_WIDTH 3
+    `define L15_THREADID_WIDTH 4 //for checkpointing port
 `endif
 
 `ifndef TLB_CSM_WIDTH

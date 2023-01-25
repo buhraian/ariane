@@ -1166,6 +1166,9 @@ module csr_regfile import ariane_pkg::*; #(
             // pmp
             pmpcfg_q               <= '0;
             pmpaddr_q              <= '0;
+            // user mode trigger
+            bp_snoop_q             <= '0;
+            bp_addr_q              <= '0;
         end else begin
             priv_lvl_q             <= priv_lvl_d;
             // floating-point registers

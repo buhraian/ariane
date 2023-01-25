@@ -36,8 +36,8 @@ module wt_dcache import ariane_pkg::*; import wt_cache_pkg::*; #(
   output amo_resp_t                      amo_resp_o,
 
   // Request ports
-  input  dcache_req_i_t [2:0]            req_ports_i,
-  output dcache_req_o_t [2:0]            req_ports_o,
+  input  dcache_req_i_t [3:0]            req_ports_i,
+  output dcache_req_o_t [3:0]            req_ports_o,
 
   input  logic                           mem_rtrn_vld_i,
   input  dcache_rtrn_t                   mem_rtrn_i,
@@ -47,7 +47,7 @@ module wt_dcache import ariane_pkg::*; import wt_cache_pkg::*; #(
 );
 
   // LD unit and PTW
-  localparam NumPorts = 3;
+  localparam NumPorts = 4;
 
   // miss unit <-> read controllers
   logic cache_en;
@@ -215,7 +215,7 @@ module wt_dcache import ariane_pkg::*; import wt_cache_pkg::*; #(
 ///////////////////////////////////////////////////////
 
   // set read port to low priority
-  assign rd_prio[2] = 1'b0;
+  assign rd_prio[NumPorts-1] = 1'b0;
 
   wt_dcache_wbuffer #(
     .ArianeCfg     ( ArianeCfg     )
@@ -228,28 +228,28 @@ module wt_dcache import ariane_pkg::*; import wt_cache_pkg::*; #(
     .cache_en_i      ( cache_en            ),
     // .cache_en_i      ( '0                  ),
     // request ports from core (store unit)
-    .req_port_i      ( req_ports_i   [2]   ),
-    .req_port_o      ( req_ports_o   [2]   ),
+    .req_port_i      ( req_ports_i   [NumPorts-1]   ),
+    .req_port_o      ( req_ports_o   [NumPorts-1]   ),
     // miss unit interface
-    .miss_req_o      ( miss_req      [2]   ),
-    .miss_ack_i      ( miss_ack      [2]   ),
-    .miss_we_o       ( miss_we       [2]   ),
-    .miss_wdata_o    ( miss_wdata    [2]   ),
-    .miss_wuser_o    ( miss_wuser    [2]   ),
-    .miss_vld_bits_o ( miss_vld_bits [2]   ),
-    .miss_paddr_o    ( miss_paddr    [2]   ),
-    .miss_nc_o       ( miss_nc       [2]   ),
-    .miss_size_o     ( miss_size     [2]   ),
-    .miss_id_o       ( miss_id       [2]   ),
-    .miss_rtrn_vld_i ( miss_rtrn_vld [2]   ),
+    .miss_req_o      ( miss_req      [NumPorts-1]   ),
+    .miss_ack_i      ( miss_ack      [NumPorts-1]   ),
+    .miss_we_o       ( miss_we       [NumPorts-1]   ),
+    .miss_wdata_o    ( miss_wdata    [NumPorts-1]   ),
+    .miss_wuser_o    ( miss_wuser    [NumPorts-1]   ),
+    .miss_vld_bits_o ( miss_vld_bits [NumPorts-1]   ),
+    .miss_paddr_o    ( miss_paddr    [NumPorts-1]   ),
+    .miss_nc_o       ( miss_nc       [NumPorts-1]   ),
+    .miss_size_o     ( miss_size     [NumPorts-1]   ),
+    .miss_id_o       ( miss_id       [NumPorts-1]   ),
+    .miss_rtrn_vld_i ( miss_rtrn_vld [NumPorts-1]   ),
     .miss_rtrn_id_i  ( miss_rtrn_id        ),
     // cache read interface
-    .rd_tag_o        ( rd_tag        [2]   ),
-    .rd_idx_o        ( rd_idx        [2]   ),
-    .rd_off_o        ( rd_off        [2]   ),
-    .rd_req_o        ( rd_req        [2]   ),
-    .rd_tag_only_o   ( rd_tag_only   [2]   ),
-    .rd_ack_i        ( rd_ack        [2]   ),
+    .rd_tag_o        ( rd_tag        [NumPorts-1]   ),
+    .rd_idx_o        ( rd_idx        [NumPorts-1]   ),
+    .rd_off_o        ( rd_off        [NumPorts-1]   ),
+    .rd_req_o        ( rd_req        [NumPorts-1]   ),
+    .rd_tag_only_o   ( rd_tag_only   [NumPorts-1]   ),
+    .rd_ack_i        ( rd_ack        [NumPorts-1]   ),
     .rd_data_i       ( rd_data             ),
     .rd_vld_bits_i   ( rd_vld_bits         ),
     .rd_hit_oh_i     ( rd_hit_oh           ),
